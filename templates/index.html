@@ -8,20 +8,26 @@
 </head>
 <body>
     <h1>ToDo リスト</h1>
-    <form action="/add" method="POST">
-        <input type="text" name="title" placeholder="タスクのタイトル" required>
-        <input type="text" name="description" placeholder="タスクの説明">
-        <button type="submit">タスクを追加</button>
-    </form>
-    <ul>
-        {% for task in tasks %}
-        <li>
-            <strong>{{ task.title }}</strong> - {{ task.description }}
-            <span>[{{ task.status }}]</span>
-            <a href="{{ url_for('complete_task', task_id=task.id) }}">完了</a>
-            <a href="{{ url_for('delete_task', task_id=task.id) }}">削除</a>
-        </li>
-        {% endfor %}
-    </ul>
+    {% if current_user.is_authenticated %}
+        <p>Welcome, {{ current_user.username }}! <a href="{{ url_for('logout') }}">Logout</a></p>
+        <form action="/add" method="POST">
+            <input type="text" name="title" placeholder="タスクのタイトル" required>
+            <input type="text" name="description" placeholder="タスクの説明">
+            <button type="submit">タスクを追加</button>
+        </form>
+        <ul>
+            {% for task in tasks %}
+            <li>
+                <strong>{{ task.title }}</strong> - {{ task.description }}
+                <span>[{{ task.status }}]</span>
+                <a href="{{ url_for('complete_task', task_id=task.id) }}">完了</a>
+                <a href="{{ url_for('delete_task', task_id=task.id) }}">削除</a>
+            </li>
+            {% endfor %}
+        </ul>
+    {% else %}
+        <p>Please <a href="{{ url_for('login') }}">login</a> to view your tasks.</p>
+    {% endif %}
 </body>
 </html>
+
