@@ -15,7 +15,6 @@ from wtforms.validators import DataRequired, Length, EqualTo
 # from google_auth_oauthlib.flow import Flow
 # from google_auth_oauthlib.flow import InstalledAppFlow
 # from googleapiclient.discovery import build
->>>>>>> develop5_tmp
 
 app = Flask(__name__)
 # データベースの設定
