@@ -8,29 +8,29 @@
 > 2025 Mini Hackathon 48 Hour Development Work 
 <img src="screenshots/demo.gif" width="800" alt="系统演示">
 
-## 🏆 项目亮点
-- 48小时极速开发原型
-- 创新结合时间管理四象限法则
-- 智能日程编排算法
-- 全栈技术整合实践
+## 🏆 Project Highlights
+- 48 hours of rapid prototyping
+- Innovative combination of the four quadrants of time management
+- Intelligent Scheduling Algorithm
+- Full Stack Technology Integration Practice
 
-## ✨ 核心功能
-### 智能任务管理
-- 四象限优先级分类（重要/紧急矩阵）
-- 自适应时间估算算法（画饼）
-- 智能日程冲突检测（画饼）
-- 通勤时间自动计算（画饼）
+## ✨ Core Functionality
+### Intelligent Task Management
+- Four-quadrant prioritization classification (importance/urgency matrix)
+- Adaptive time estimation algorithm (画饼)
+- Intelligent schedule conflict detection (画饼)
+- Automatic commute time calculation (画饼)
 
-### 深度集成
-- Google Calendar双向同步
-- 地理位置服务整合（画饼）
-- 多设备实时同步（画饼）
+### Deep Integration
+- Google Calendar two-way synchronization
+- Geolocation services integration (画饼)
+- Multi-device real-time synchronization (画饼)
 
-### 效率工具
-- 一键智能排序
-- 可视化数据看板（画饼）
-- 多维度任务筛选
-- CSV/Excel导入导出（画饼）
+### Efficiency Tools
+- One-click smart sorting
+- Visual Data Kanban (画饼)
+- Multi-dimensional task filtering
+- CSV/Excel Import and Export (画饼)
 
 ## 🛠️ 技术栈
 **Frontend**  
@@ -47,12 +47,12 @@
 **APIs**  
 ![Google Calendar API](https://img.shields.io/badge/Google%20Calendar%20API-v3-4285F4?logo=googlecalendar)
 
-## 🚀 快速开始
-### 环境要求
+## 🚀 Quick Start
+### Environmental requirements
 - Python 3.9+
 - Google API凭证文件
 
-### 安装步骤
+### Installation steps
 ```bash
 # 克隆仓库
 git clone https://github.com/Shi-330/to_do_list.git
