@@ -1,6 +1,7 @@
 import os
 import json
 from datetime import datetime
+from dateutil import parser
 #flask
 from flask import Flask, render_template, request, redirect, url_for, flash, session
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
@@ -54,6 +55,7 @@ class Task(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     deleted_flag = db.Column(db.Boolean, default=False)  # 削除フラグを追加
     google_task_id = db.Column(db.String(50), nullable=True,default='')  # Google TasksのIDフィールド
+    updated_at = db.Column(db.DateTime, default=datetime.now)  # 更新日時
 
     def __repr__(self):
         return f'<Task {self.title}>'
@@ -167,6 +169,7 @@ def complete_task(task_id):
         flash('You are not authorized to update this task.')
         return redirect(url_for('index'))
     task.status = '完了'
+    task.updated_at = datetime.now()
     db.session.commit()
     return redirect(url_for('index'))
 
@@ -212,7 +215,7 @@ def sync_calendar():
     google_tasks = results.get('items', [])
     
     # Google側の既存タスク情報をタイトルと説明でセット化
-    google_task_map = {task.get('title', ''): task['id'] for task in google_tasks if 'id' in task}
+    google_task_map = {task.get('id', ''): task['status'] for task in google_tasks if 'id' in task}
 
     # ユーザーの課題データをすべて取得
     tasks = Task.query.filter_by(user_id=current_user.id).all()
@@ -233,8 +236,29 @@ def sync_calendar():
         else:
             # google_task_idが一致する場合はスキップ
             if task.google_task_id:
-                print(f"既存タスクのためスキップ: {task.title}")
-                continue
+                task_status = "completed" if task.status == "完了" else "needsAction"
+                result = service.tasks().get(tasklist='@default',task = task.google_task_id).execute()
+                google_task_status = result.get('status')
+                #タスクの状態が異なっている場合は最新に合わせる
+                if(task_status != google_task_status):
+                    updated_str = result.get('updated')  # 例: "2025-02-09T12:34:56Z"
+                    updated_time = parser.parse(updated_str)
+                    if(task.updated_at < updated_time):
+                        task.status = "完了" if google_task_status == "completed" else "未完成"                        
+                    else:
+                        task_googleTasks = {
+                            "status": task_status,
+                            "kind": "tasks#task",
+                            "title": task.title,
+                            "deleted": False,
+                            "due": task.ddl_date.isoformat() + 'Z' if task.ddl_date else None,
+                            "notes": task.description
+                        }
+                        result = service.tasks().update(tasklist='@default', task=task.google_task_id, body=task_googleTasks).execute()
+                        print(f"タスクがGoogle Tasksに更新されました: {result.get('title')}")
+                else:
+                    print(f"既存タスクのためスキップ: {task.title}")
+                    continue
             
             task_status = "completed" if task.status == "完了" else "needsAction"
 
