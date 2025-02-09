@@ -248,15 +248,33 @@ def smart_view():
 
 @app.route("/register", methods=['GET', 'POST'])
 def register():
+    # 如果用户已经登录，重定向到首页
+    if current_user.is_authenticated:
+        return redirect(url_for('index'))
+    
     form = RegistrationForm()
     if form.validate_on_submit():
-        hashed_password = generate_password_hash(form.password.data)
-        new_user = User(username=form.username.data, password=hashed_password) 
-        db.session.add(new_user)
-        db.session.commit()
-        flash('Your account has been created! You are now able to log in', 'success')
-        return redirect(url_for('login'))
-    return render_template('register.html', title='Register', form=form)
+        # 检查用户名是否已存在
+        existing_user = User.query.filter_by(username=form.username.data).first()
+        if existing_user:
+            flash('このユーザー名は既に使用されています。', 'danger')
+            return render_template('register.html', title='新規登録', form=form)
+        
+        try:
+            # 创建新用户
+            hashed_password = generate_password_hash(form.password.data)
+            new_user = User(username=form.username.data, password=hashed_password)
+            db.session.add(new_user)
+            db.session.commit()
+            
+            flash('アカウントが作成されました。ログインしてください。', 'success')
+            return redirect(url_for('login'))
+        except Exception as e:
+            db.session.rollback()
+            flash('アカウントの作成中にエラーが発生しました。', 'danger')
+            app.logger.error(f"Error during registration: {str(e)}")
+            
+    return render_template('register.html', title='新規登録', form=form)
 
 @app.route("/login", methods=['GET', 'POST'])
 def login():
@@ -266,17 +284,27 @@ def login():
     
     form = LoginForm()
     if form.validate_on_submit():
-        user = User.query.filter_by(username=form.username.data).first()
-        if user and check_password_hash(user.password, form.password.data):
-            login_user(user)
-            next_page = request.args.get('next')
-            # 确保 next_page 是相对路径
-            if next_page and not next_page.startswith('/'):
-                next_page = None
-            return redirect(next_page or url_for('index'))
-        else:
-            flash('ログインに失敗しました。ユーザー名とパスワードを確認してください。', 'danger')
-    return render_template('login.html', title='Login', form=form)
+        try:
+            user = User.query.filter_by(username=form.username.data).first()
+            if user and check_password_hash(user.password, form.password.data):
+                # 登录用户
+                login_user(user)
+                
+                # 获取下一页地址
+                next_page = request.args.get('next')
+                # 安全检查：确保 next_page 是相对路径
+                if next_page and not next_page.startswith('/'):
+                    next_page = None
+                    
+                flash(f'ようこそ、{user.username}さん！', 'success')
+                return redirect(next_page or url_for('index'))
+            else:
+                flash('ログインに失敗しました。ユーザー名とパスワードを確認してください。', 'danger')
+        except Exception as e:
+            flash('ログイン処理中にエラーが発生しました。', 'danger')
+            app.logger.error(f"Error during login: {str(e)}")
+    
+    return render_template('login.html', title='ログイン', form=form)
 
 @app.route("/logout")
 @login_required
