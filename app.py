@@ -52,6 +52,8 @@ class Task(db.Model):
     preference = db.Column(db.Integer)
     status = db.Column(db.String(20), default='未完成')  # タスクの状態（デフォルトは「未完成」）
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    deleted_flag = db.Column(db.Boolean, default=False)  # 削除フラグを追加
+    google_task_id = db.Column(db.String(50), nullable=True,default='')  # Google TasksのIDフィールド
 
     def __repr__(self):
         return f'<Task {self.title}>'
@@ -112,10 +114,11 @@ def index():
     else:
         sort_column = Task.ddl_date
 
+    query = Task.query.filter_by(user_id=current_user.id, deleted_flag=False)
     if sort_order == 'asc':
-        tasks = Task.query.order_by(sort_column.asc()).all()
+        tasks = query.order_by(sort_column.asc()).all()
     else:
-        tasks = Task.query.order_by(sort_column.desc()).all()
+        tasks = query.order_by(sort_column.desc()).all()
 
     return render_template('index.html', tasks=tasks, sort_by=sort_by, sort_order=sort_order)
 
@@ -149,8 +152,11 @@ def delete_task(task_id):
     if task.user_id != current_user.id:
         flash('You are not authorized to delete this task.')
         return redirect(url_for('index'))
-    db.session.delete(task)
+
+    # 削除フラグを立てる
+    task.deleted_flag = True
     db.session.commit()
+    flash('タスクが削除フラグ付きで保留されました。同期時にGoogle Tasksから削除します。')
     return redirect(url_for('index'))
 
 @app.route('/complete/<int:task_id>')
@@ -206,7 +212,7 @@ def sync_calendar():
     google_tasks = results.get('items', [])
     
     # Google側の既存タスク情報をタイトルと説明でセット化
-    existing_tasks_set = {(task.get('title', ''), task.get('notes', '')) for task in google_tasks}
+    google_task_map = {task.get('title', ''): task['id'] for task in google_tasks if 'id' in task}
 
     # ユーザーの課題データをすべて取得
     tasks = Task.query.filter_by(user_id=current_user.id).all()
@@ -217,28 +223,37 @@ def sync_calendar():
         return redirect(url_for('index'))
 
     for task in tasks:
-        task_data = (task.title, task.description)
+        if task.deleted_flag:
+            if task.google_task_id:
+                service.tasks().delete(tasklist='@default', task=task.google_task_id).execute()
+                print(f"Google Tasksからタスクを削除しました: {task.title}")
+            db.session.delete(task)
+            print(f"DBからタスクを削除しました: {task.title}")
         
-        # タイトルと説明が一致する場合はスキップ
-        if task_data in existing_tasks_set:
-            print(f"既存タスクのためスキップ: {task.title}")
-            continue
-        
-        task_status = "completed" if task.status == "完了" else "needsAction"
+        else:
+            # google_task_idが一致する場合はスキップ
+            if task.google_task_id:
+                print(f"既存タスクのためスキップ: {task.title}")
+                continue
+            
+            task_status = "completed" if task.status == "完了" else "needsAction"
 
-        # 新規タスクとしてGoogle Tasksに登録
-        task_googleTasks = {
-            "status": task_status,
-            "kind": "tasks#task",
-            "title": task.title,
-            "deleted": False,
-            "due": task.ddl_date.isoformat() + 'Z' if task.ddl_date else None,
-            "notes": task.description
-        }
+            # 新規タスクとしてGoogle Tasksに登録
+            task_googleTasks = {
+                "status": task_status,
+                "kind": "tasks#task",
+                "title": task.title,
+                "deleted": False,
+                "due": task.ddl_date.isoformat() + 'Z' if task.ddl_date else None,
+                "notes": task.description
+            }
 
-        result = service.tasks().insert(tasklist='@default', body=task_googleTasks).execute()
-        print(f"タスクがGoogle Tasksに追加されました: {result.get('title')}")
+            result = service.tasks().insert(tasklist='@default', body=task_googleTasks).execute()
+            google_task_id = result.get('id')  # Google Tasks IDを取得
+            task.google_task_id = google_task_id
+            print(f"タスクがGoogle Tasksに追加されました: {result.get('title')}")
 
+    db.session.commit()
     flash(f'{len(tasks)}件の課題がToDoリストに登録されました。')
     return redirect(url_for('index'))
 
