@@ -10,6 +10,7 @@ from flask_wtf import FlaskForm
 from wtforms import StringField, PasswordField, SubmitField
 from wtforms.validators import DataRequired, Length, EqualTo
 #google api
+from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -31,7 +32,7 @@ login_manager.init_app(app)
 login_manager.login_view = 'login'
 # OAuth2設定ファイル
 CLIENT_SECRET_FILE = 'credentials.json'  # ここにダウンロードしたJSONファイル名を指定
-SCOPES = ['https://www.googleapis.com/auth/calendar']
+SCOPES = ['https://www.googleapis.com/auth/tasks']
 
 
 
@@ -60,8 +61,8 @@ class Task(db.Model):
             return self.ddl_date.strftime('%Y-%m-%d')
         return '未设置'
 
-def get_calendar_service():
-    """Google Calendar API サービスオブジェクトを作成"""
+def get_tasks_service():
+    """Google Tasks API サービスオブジェクトを作成"""
     creds = None
     # OAuth 2.0 認証フロー
     if os.path.exists('token.json'):
@@ -70,7 +71,7 @@ def get_calendar_service():
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
         else:
-            flow = InstalledAppFlow.from_client_secrets_file('credentials.json', SCOPES)
+            flow = InstalledAppFlow.from_client_secrets_file('credentials.json', SCOPES, redirect_uri='http://localhost')
             creds = flow.run_local_server(port=0)
 
         # トークンを保存
@@ -78,7 +79,7 @@ def get_calendar_service():
             token.write(creds.to_json())
 
     # Google Calendar APIサービスの構築
-    service = build('calendar', 'v3', credentials=creds)
+    service = build('tasks', 'v1', credentials=creds)
     return service
 
 @login_manager.user_loader
@@ -194,38 +195,34 @@ def logout():
     return redirect(url_for('index'))
 
 
+
 # カレンダーイベント追加
 @app.route('/sync_calendar', methods=['POST'])
 @login_required
 def sync_calendar():
     # ユーザーの課題データをすべて取得
     tasks = Task.query.filter_by(user_id=current_user.id).all()
+    
 
     if not tasks:
         flash("登録された課題がありません。")
         return redirect(url_for('index'))
 
-    # Googleカレンダーにイベントを追加する
-    service = get_calendar_service()
+    # ToDoリストにタスクリストを追加する
+    service = get_tasks_service()
     for task in tasks:
-        due_date = datetime.datetime.now() + datetime.timedelta(days=7)  # 締め切り情報を追加する場合は変更
-
-        event = {
-            'summary': task.title,
-            'description': task.description,
-            'start': {
-                'dateTime': due_date.isoformat(),
-                'timeZone': 'Asia/Tokyo',
-            },
-            'end': {
-                'dateTime': (due_date + datetime.timedelta(hours=1)).isoformat(),
-                'timeZone': 'Asia/Tokyo',
-            },
+        task_googleTasks = {
+            'title': task.title,
+            'notes': task.description,
+            'due': task.ddl_date.isoformat()
         }
+        print(task_googleTasks)
+        task_googleTasks = json.dumps(task_googleTasks, indent=2, ensure_ascii=False)
+        print(task_googleTasks)
+        result = service.tasks().insert(tasklist='@default', body=task_googleTasks).execute()
+        print(f"タスクがGoogle Tasksに追加されました: {result.get('title')}")
 
-        service.events().insert(calendarId='primary', body=event).execute()
-
-    flash(f'{len(tasks)}件の課題がGoogleカレンダーに登録されました。')
+    flash(f'{len(tasks)}件の課題がToDoリストに登録されました。')
     return redirect(url_for('index'))
 
 if __name__ == '__main__':
