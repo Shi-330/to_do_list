@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>智能四象限视图</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        .quadrant-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 1rem;
+            margin-top: 2rem;
+        }
+        .quadrant {
+            padding: 1.5rem;
+            border-radius: 0.5rem;
+            min-height: 300px;
+        }
+        #q1 { background-color: #ffe6e6; } /* 重要且紧急 */
+        #q2 { background-color: #e6ffe6; } /* 重要不紧急 */
+        #q3 { background-color: #fff3e6; } /* 紧急不重要 */
+        #q4 { background-color: #e6f3ff; } /* 不重要不紧急 */
+        .task-card {
+            background: white;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            border-radius: 0.25rem;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .priority-badge {
+            font-size: 0.8rem;
+            margin-left: 0.5rem;
+        }
+    </style>
+</head>
+<body class="bg-light">
+    <div class="container py-5">
+        <header class="d-flex justify-content-between align-items-center mb-5">
+            <h1 class="text-primary">智能四象限视图</h1>
+            <a href="{{ url_for('index') }}" class="btn btn-secondary">返回列表视图</a>
+        </header>
+
+        <div class="quadrant-grid">
+            <!-- 第一象限：重要且紧急 -->
+            <div class="quadrant" id="q1">
+                <h4 class="text-danger">🏃 重要且紧急</h4>
+                {% for task in quadrants.q1 %}
+                <div class="task-card">
+                    <div class="d-flex justify-content-between">
+                        <div>
+                            <strong>{{ task.title }}</strong>
+                            <span class="badge bg-primary priority-badge">
+                                重要度: {{ "%.1f"|format(task.importance) }}
+                                紧急度: {{ "%.1f"|format(task.urgency) }}
+                            </span>
+                        </div>
+                        <div>
+                            <a href="{{ url_for('complete_task', task_id=task.id) }}" class="btn btn-success btn-sm">完成</a>
+                            <a href="{{ url_for('delete_task', task_id=task.id) }}" class="btn btn-danger btn-sm">删除</a>
+                        </div>
+                    </div>
+                    <div class="text-muted mt-2">
+                        <small>
+                            截止: {{ task.formatted_ddl() }} | 
+                            学分: {{ task.credit }} | 
+                            偏好: {{ task.preference }}
+                            {% if task.description %}
+                            <br>{{ task.description }}
+                            {% endif %}
+                        </small>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+
+            <!-- 第二象限：重要不紧急 -->
+            <div class="quadrant" id="q2">
+                <h4 class="text-success">📅 重要不紧急</h4>
+                {% for task in quadrants.q2 %}
+                <div class="task-card">
+                    <div class="d-flex justify-content-between">
+                        <div>
+                            <strong>{{ task.title }}</strong>
+                            <span class="badge bg-primary priority-badge">
+                                重要度: {{ "%.1f"|format(task.importance) }}
+                                紧急度: {{ "%.1f"|format(task.urgency) }}
+                            </span>
+                        </div>
+                        <div>
+                            <a href="{{ url_for('complete_task', task_id=task.id) }}" class="btn btn-success btn-sm">完成</a>
+                            <a href="{{ url_for('delete_task', task_id=task.id) }}" class="btn btn-danger btn-sm">删除</a>
+                        </div>
+                    </div>
+                    <div class="text-muted mt-2">
+                        <small>
+                            截止: {{ task.formatted_ddl() }} | 
+                            学分: {{ task.credit }} | 
+                            偏好: {{ task.preference }}
+                            {% if task.description %}
+                            <br>{{ task.description }}
+                            {% endif %}
+                        </small>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+
+            <!-- 第三象限：紧急不重要 -->
+            <div class="quadrant" id="q3">
+                <h4 class="text-warning">⏰ 紧急不重要</h4>
+                {% for task in quadrants.q3 %}
+                <div class="task-card">
+                    <div class="d-flex justify-content-between">
+                        <div>
+                            <strong>{{ task.title }}</strong>
+                            <span class="badge bg-primary priority-badge">
+                                重要度: {{ "%.1f"|format(task.importance) }}
+                                紧急度: {{ "%.1f"|format(task.urgency) }}
+                            </span>
+                        </div>
+                        <div>
+                            <a href="{{ url_for('complete_task', task_id=task.id) }}" class="btn btn-success btn-sm">完成</a>
+                            <a href="{{ url_for('delete_task', task_id=task.id) }}" class="btn btn-danger btn-sm">删除</a>
+                        </div>
+                    </div>
+                    <div class="text-muted mt-2">
+                        <small>
+                            截止: {{ task.formatted_ddl() }} | 
+                            学分: {{ task.credit }} | 
+                            偏好: {{ task.preference }}
+                            {% if task.description %}
+                            <br>{{ task.description }}
+                            {% endif %}
+                        </small>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+
+            <!-- 第四象限：不重要不紧急 -->
+            <div class="quadrant" id="q4">
+                <h4 class="text-primary">💤 不重要不紧急</h4>
+                {% for task in quadrants.q4 %}
+                <div class="task-card">
+                    <div class="d-flex justify-content-between">
+                        <div>
+                            <strong>{{ task.title }}</strong>
+                            <span class="badge bg-primary priority-badge">
+                                重要度: {{ "%.1f"|format(task.importance) }}
+                                紧急度: {{ "%.1f"|format(task.urgency) }}
+                            </span>
+                        </div>
+                        <div>
+                            <a href="{{ url_for('complete_task', task_id=task.id) }}" class="btn btn-success btn-sm">完成</a>
+                            <a href="{{ url_for('delete_task', task_id=task.id) }}" class="btn btn-danger btn-sm">删除</a>
+                        </div>
+                    </div>
+                    <div class="text-muted mt-2">
+                        <small>
+                            截止: {{ task.formatted_ddl() }} | 
+                            学分: {{ task.credit }} | 
+                            偏好: {{ task.preference }}
+                            {% if task.description %}
+                            <br>{{ task.description }}
+                            {% endif %}
+                        </small>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

@@ -15,7 +15,7 @@ from wtforms.validators import DataRequired, Length, EqualTo
 # from google_auth_oauthlib.flow import Flow
 # from google_auth_oauthlib.flow import InstalledAppFlow
 # from googleapiclient.discovery import build
->>>>>>> develop5_tmp
+
 
 app = Flask(__name__)
 # データベースの設定
@@ -55,6 +55,11 @@ class Task(db.Model):
     ddl_date = db.Column(db.DateTime)  # 締切日
     credit = db.Column(db.Integer)
     preference = db.Column(db.Integer)
+
+    importance = db.Column(db.Float, default=0.0)  # 重要度
+    urgency = db.Column(db.Float, default=0.0)    # 紧急度
+
+
     status = db.Column(db.String(20), default='未完成')  # タスクの状態（デフォルトは「未完成」）
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
 
@@ -66,6 +71,30 @@ class Task(db.Model):
             return self.ddl_date.strftime('%Y-%m-%d')
         return '未设置'
     
+    def update_priority(self):
+        """自动更新优先级算法"""
+        # 时间紧迫性计算（剩余天数越少，紧急度越高）
+        days_left = (self.ddl_date - datetime.now()).days
+        time_factor = 1 / (days_left + 1)  # +1防止除零错误
+        
+        # 学分重要性计算（1-10分制）
+        credit_factor = self.credit / 10
+        
+        # 个人偏好计算（1-5分制）
+        preference_factor = self.preference / 5
+        
+        # 组合计算（可调整权重）
+        self.urgency = min(1.0, max(0.0, 
+            0.6 * time_factor + 
+            0.2 * credit_factor + 
+            0.2 * preference_factor
+        ))
+        
+        self.importance = min(1.0, max(0.0,
+            0.7 * credit_factor +
+            0.3 * preference_factor
+        ))
+        
 # データベースの作成
 with app.app_context():
     db.create_all()
@@ -173,6 +202,50 @@ def complete_task(task_id):
     db.session.commit()
     return redirect(url_for('index'))
 
+@app.route('/smart_view')
+@login_required
+def smart_view():
+    # 获取当前用户的所有任务
+    tasks = Task.query.filter_by(user_id=current_user.id).all()
+
+    # 初始化四象限字典
+    quadrants = {
+        'q1': [],  # 重要且紧急（Importance > 0.5, Urgency > 0.5）
+        'q2': [],  # 重要不紧急（Importance > 0.5, Urgency <= 0.5）
+        'q3': [],  # 紧急不重要（Importance <= 0.5, Urgency > 0.5）
+        'q4': []   # 不重要不紧急（Importance <= 0.5, Urgency <= 0.5）
+    }
+
+    # 智能分类逻辑
+    for task in tasks:
+        # 自动计算优先级（如果未手动设置）
+        if task.importance == 0 or task.urgency == 0:
+            # 使用算法自动计算
+            days_left = (task.ddl_date - datetime.now()).days + 1
+            task.urgency = min(1.0, max(0.0, 0.4 * (1 / days_left) + 0.3 * (task.credit/10) + 0.3 * (task.preference/5)))
+            task.importance = min(1.0, max(0.0, 0.5 * (task.credit/10) + 0.5 * (task.preference/5)))
+            db.session.commit()
+
+        # 进行分类
+        if task.importance > 0.5:
+            if task.urgency > 0.5:
+                quadrants['q1'].append(task)
+            else:
+                quadrants['q2'].append(task)
+        else:
+            if task.urgency > 0.5:
+                quadrants['q3'].append(task)
+            else:
+                quadrants['q4'].append(task)
+
+    # 为每个象限添加排序逻辑
+    quadrants['q1'].sort(key=lambda x: (-x.urgency, -x.importance))
+    quadrants['q2'].sort(key=lambda x: (-x.importance, x.urgency))
+    quadrants['q3'].sort(key=lambda x: (-x.urgency, x.importance))
+    quadrants['q4'].sort(key=lambda x: (x.ddl_date))
+
+    return render_template('smart_view.html', quadrants=quadrants)
+
 @app.route("/register", methods=['GET', 'POST'])
 def register():
     form = RegistrationForm()
@@ -187,15 +260,22 @@ def register():
 
 @app.route("/login", methods=['GET', 'POST'])
 def login():
+    # 如果用户已经登录，直接重定向到首页
+    if current_user.is_authenticated:
+        return redirect(url_for('index'))
+    
     form = LoginForm()
     if form.validate_on_submit():
         user = User.query.filter_by(username=form.username.data).first()
         if user and check_password_hash(user.password, form.password.data):
             login_user(user)
             next_page = request.args.get('next')
-            return redirect(next_page) if next_page else redirect(url_for('index'))
+            # 确保 next_page 是相对路径
+            if next_page and not next_page.startswith('/'):
+                next_page = None
+            return redirect(next_page or url_for('index'))
         else:
-            flash('Login Unsuccessful. Please check username and password', 'danger')
+            flash('ログインに失敗しました。ユーザー名とパスワードを確認してください。', 'danger')
     return render_template('login.html', title='Login', form=form)
 
 @app.route("/logout")
