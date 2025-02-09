@@ -5,16 +5,16 @@ from datetime import datetime
 from flask import Flask, render_template, request, redirect, url_for, flash, session
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from flask_sqlalchemy import SQLAlchemy
-
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_wtf import FlaskForm
 from wtforms import StringField, PasswordField, SubmitField
 from wtforms.validators import DataRequired, Length, EqualTo
 #google api
-# from google.oauth2.credentials import Credentials
-# from google_auth_oauthlib.flow import Flow
-# from google_auth_oauthlib.flow import InstalledAppFlow
-# from googleapiclient.discovery import build
+from google.auth.transport.requests import Request
+from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import Flow
+from google_auth_oauthlib.flow import InstalledAppFlow
+from googleapiclient.discovery import build
 
 
 app = Flask(__name__)
@@ -30,6 +30,9 @@ db = SQLAlchemy(app)
 login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'login'
+# OAuth2設定ファイル
+CLIENT_SECRET_FILE = 'credentials.json'  # ここにダウンロードしたJSONファイル名を指定
+SCOPES = ['https://www.googleapis.com/auth/tasks']
 
 # ログインマネージャーの設定
 login_manager = LoginManager()
@@ -58,6 +61,9 @@ class Task(db.Model):
 
     importance = db.Column(db.Float, default=0.0)  # 重要度
     urgency = db.Column(db.Float, default=0.0)    # 紧急度
+
+    deleted_flag = db.Column(db.Boolean, default=False)  # 削除フラグを追加
+    google_task_id = db.Column(db.String(50), nullable=True,default='')  # Google TasksのIDフィールド
 
 
     status = db.Column(db.String(20), default='未完成')  # タスクの状態（デフォルトは「未完成」）
@@ -94,7 +100,28 @@ class Task(db.Model):
             0.7 * credit_factor +
             0.3 * preference_factor
         ))
-        
+
+def get_tasks_service():
+    """Google Tasks API サービスオブジェクトを作成"""
+    creds = None
+    # OAuth 2.0 認証フロー
+    if os.path.exists('token.json'):
+        creds = Credentials.from_authorized_user_file('token.json', SCOPES)
+    if not creds or not creds.valid:
+        if creds and creds.expired and creds.refresh_token:
+            creds.refresh(Request())
+        else:
+            flow = InstalledAppFlow.from_client_secrets_file('credentials.json', SCOPES, redirect_uri='http://localhost')
+            creds = flow.run_local_server(port=0)
+
+        # トークンを保存
+        with open('token.json', 'w') as token:
+            token.write(creds.to_json())
+
+    # Google Calendar APIサービスの構築
+    service = build('tasks', 'v1', credentials=creds)
+    return service
+
 # データベースの作成
 with app.app_context():
     db.create_all()
@@ -187,8 +214,11 @@ def delete_task(task_id):
     if task.user_id != current_user.id:
         flash('You are not authorized to delete this task.')
         return redirect(url_for('index'))
-    db.session.delete(task)
+
+    # 削除フラグを立てる
+    task.deleted_flag = True
     db.session.commit()
+    flash('タスクが削除フラグ付きで保留されました。同期時にGoogle Tasksから削除します。')
     return redirect(url_for('index'))
 
 @app.route('/complete/<int:task_id>')
@@ -313,39 +343,60 @@ def logout():
     return redirect(url_for('index'))
 
 
-# # カレンダーイベント追加
-# @app.route('/sync_calendar', methods=['POST'])
-# @login_required
-# def sync_calendar():
-#     # ユーザーの課題データをすべて取得
-#     tasks = Task.query.filter_by(user_id=current_user.id).all()
+# カレンダーイベント追加
+@app.route('/sync_calendar', methods=['POST'])
+@login_required
+def sync_calendar():
+    # ToDoリストにタスクリストを追加する
+    service = get_tasks_service()
+    results = service.tasks().list(tasklist='@default').execute()
+    google_tasks = results.get('items', [])
+    
+    # Google側の既存タスク情報をタイトルと説明でセット化
+    google_task_map = {task.get('title', ''): task['id'] for task in google_tasks if 'id' in task}
 
-#     if not tasks:
-#         flash("登録された課題がありません。")
-#         return redirect(url_for('index'))
+    # ユーザーの課題データをすべて取得
+    tasks = Task.query.filter_by(user_id=current_user.id).all()
+    
 
-#     # Googleカレンダーにイベントを追加する
-#     service = get_calendar_service()
-#     for task in tasks:
-#         due_date = datetime.datetime.now() + datetime.timedelta(days=7)  # 締め切り情報を追加する場合は変更
+    if not tasks:
+        flash("登録された課題がありません。")
+        return redirect(url_for('index'))
 
-#         event = {
-#             'summary': task.title,
-#             'description': task.description,
-#             'start': {
-#                 'dateTime': due_date.isoformat(),
-#                 'timeZone': 'Asia/Tokyo',
-#             },
-#             'end': {
-#                 'dateTime': (due_date + datetime.timedelta(hours=1)).isoformat(),
-#                 'timeZone': 'Asia/Tokyo',
-#             },
-#         }
+    for task in tasks:
+        if task.deleted_flag:
+            if task.google_task_id:
+                service.tasks().delete(tasklist='@default', task=task.google_task_id).execute()
+                print(f"Google Tasksからタスクを削除しました: {task.title}")
+            db.session.delete(task)
+            print(f"DBからタスクを削除しました: {task.title}")
+        
+        else:
+            # google_task_idが一致する場合はスキップ
+            if task.google_task_id:
+                print(f"既存タスクのためスキップ: {task.title}")
+                continue
+            
+            task_status = "completed" if task.status == "完了" else "needsAction"
 
-#         service.events().insert(calendarId='primary', body=event).execute()
+            # 新規タスクとしてGoogle Tasksに登録
+            task_googleTasks = {
+                "status": task_status,
+                "kind": "tasks#task",
+                "title": task.title,
+                "deleted": False,
+                "due": task.ddl_date.isoformat() + 'Z' if task.ddl_date else None,
+                "notes": task.description
+            }
 
-#     flash(f'{len(tasks)}件の課題がGoogleカレンダーに登録されました。')
-#     return redirect(url_for('index'))
+            result = service.tasks().insert(tasklist='@default', body=task_googleTasks).execute()
+            google_task_id = result.get('id')  # Google Tasks IDを取得
+            task.google_task_id = google_task_id
+            print(f"タスクがGoogle Tasksに追加されました: {result.get('title')}")
+
+    db.session.commit()
+    flash(f'{len(tasks)}件の課題がToDoリストに登録されました。')
+    return redirect(url_for('index'))
 
 if __name__ == '__main__':
     with app.app_context():
