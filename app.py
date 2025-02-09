@@ -200,6 +200,14 @@ def logout():
 @app.route('/sync_calendar', methods=['POST'])
 @login_required
 def sync_calendar():
+    # ToDoリストにタスクリストを追加する
+    service = get_tasks_service()
+    results = service.tasks().list(tasklist='@default').execute()
+    google_tasks = results.get('items', [])
+    
+    # Google側の既存タスク情報をタイトルと説明でセット化
+    existing_tasks_set = {(task.get('title', ''), task.get('notes', '')) for task in google_tasks}
+
     # ユーザーの課題データをすべて取得
     tasks = Task.query.filter_by(user_id=current_user.id).all()
     
@@ -208,17 +216,26 @@ def sync_calendar():
         flash("登録された課題がありません。")
         return redirect(url_for('index'))
 
-    # ToDoリストにタスクリストを追加する
-    service = get_tasks_service()
     for task in tasks:
+        task_data = (task.title, task.description)
+        
+        # タイトルと説明が一致する場合はスキップ
+        if task_data in existing_tasks_set:
+            print(f"既存タスクのためスキップ: {task.title}")
+            continue
+        
+        task_status = "completed" if task.status == "完了" else "needsAction"
+
+        # 新規タスクとしてGoogle Tasksに登録
         task_googleTasks = {
-            'title': task.title,
-            'notes': task.description,
-            'due': task.ddl_date.isoformat()
+            "status": task_status,
+            "kind": "tasks#task",
+            "title": task.title,
+            "deleted": False,
+            "due": task.ddl_date.isoformat() + 'Z' if task.ddl_date else None,
+            "notes": task.description
         }
-        print(task_googleTasks)
-        task_googleTasks = json.dumps(task_googleTasks, indent=2, ensure_ascii=False)
-        print(task_googleTasks)
+
         result = service.tasks().insert(tasklist='@default', body=task_googleTasks).execute()
         print(f"タスクがGoogle Tasksに追加されました: {result.get('title')}")
 
